@@ -1,56 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import cors from "cors";
-import express from "express";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
 import {
   registerAppResource,
   registerAppTool,
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/server";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
+import widgetHtml from "../dist/widget.html";
+
 const SERVER_NAME = "chatgpt-ask-user-mcp";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.2.0";
 const ASK_USER_URI = "ui://ask-user/ask-user.html";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT_DIR = path.resolve(__dirname, "..");
-const DIST_DIR = path.resolve(ROOT_DIR, "dist");
-
-function readRequiredFile(fileName: string): string {
-  const filePath = path.join(DIST_DIR, fileName);
-  if (!fs.existsSync(filePath)) {
-    throw new Error(
-      `Missing ${filePath}. Run "npm run build" before starting the server.`,
-    );
-  }
-  return fs.readFileSync(filePath, "utf8");
-}
-
-function buildWidgetHtml(): string {
-  const js = readRequiredFile("widget.js");
-  const css = readRequiredFile("widget.css");
-
-  // Keep the widget self-contained so ChatGPT's iframe does not need any
-  // external resource domains or a custom CSP allow-list.
-  return `<!doctype html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>${css}</style>
-</head>
-<body>
-  <div id="ask-user-root"></div>
-  <script type="module">${js}</script>
-</body>
-</html>`;
-}
 
 const optionSchema = z.object({
   label: z.string().min(1).describe("Human-readable option label."),
@@ -65,7 +27,7 @@ const optionSchema = z.object({
     .describe("Optional short explanation shown below the option."),
 });
 
-function createMcpServer(widgetHtml: string): McpServer {
+function createServer(): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
     version: SERVER_VERSION,
@@ -81,7 +43,7 @@ function createMcpServer(widgetHtml: string): McpServer {
         "Use this when the user's choice materially affects how the task should continue, when multiple reasonable paths exist, " +
         "or when the user explicitly asks to be consulted. Provide concise options when possible. For yes/no questions, provide two options. " +
         "After calling this tool, do not choose an answer yourself and do not continue the dependent work until the user's follow-up answer arrives.",
-      inputSchema: {
+      inputSchema: z.object({
         question: z.string().min(1).describe("The question to show the user."),
         options: z
           .array(optionSchema)
@@ -114,7 +76,7 @@ function createMcpServer(widgetHtml: string): McpServer {
           .describe(
             "Optional one-sentence context explaining why the answer is needed.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -188,56 +150,29 @@ function createMcpServer(widgetHtml: string): McpServer {
   return server;
 }
 
-const widgetHtml = buildWidgetHtml();
-const app = express();
+const mcpHandler = createMcpHandler(createServer);
 
-app.disable("x-powered-by");
-app.use(cors());
-app.use(express.json({ limit: "1mb" }));
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
 
-app.get("/", (_req, res) => {
-  res.json({
-    name: SERVER_NAME,
-    version: SERVER_VERSION,
-    mcp: "/mcp",
-    health: "/health",
-  });
-});
-
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
-app.all("/mcp", async (req, res) => {
-  const server = createMcpServer(widgetHtml);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
-
-  res.on("close", () => {
-    void transport.close().catch(() => {});
-    void server.close().catch(() => {});
-  });
-
-  try {
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error("MCP request failed:", error);
-    if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: {
-          code: -32603,
-          message: "Internal server error",
-        },
-        id: null,
+    if (url.pathname === "/health") {
+      return Response.json({
+        status: "ok",
+        name: SERVER_NAME,
+        version: SERVER_VERSION,
       });
     }
-  }
-});
 
-const port = Number.parseInt(process.env.PORT ?? "8000", 10);
-app.listen(port, "0.0.0.0", () => {
-  console.log(`${SERVER_NAME} listening on http://0.0.0.0:${port}/mcp`);
-});
+    if (url.pathname === "/") {
+      return Response.json({
+        name: SERVER_NAME,
+        version: SERVER_VERSION,
+        mcp: "/mcp",
+        health: "/health",
+      });
+    }
+
+    return mcpHandler(request, env, ctx);
+  },
+} satisfies ExportedHandler;

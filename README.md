@@ -1,27 +1,33 @@
 # ChatGPT Ask User MCP
 
-A tiny **remote MCP App for ChatGPT Web**. It gives ChatGPT one tool, `ask_user`, so the model can stop at a decision point, show you a native-looking question card, receive your choice, and continue the same conversation.
+A tiny **remote MCP App for ChatGPT Web**, deployed on **Cloudflare Workers**.
+
+It gives ChatGPT one tool, `ask_user`, so the model can stop at a decision point, show you a native-looking question card, receive your choice, and continue the same conversation.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fzjm54321%2Fchatgpt-ask-user-mcp)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zjm54321/chatgpt-ask-user-mcp)
 
 ## Use it
 
-### 1. Deploy
+### 1. Deploy to Cloudflare
 
-Click **Deploy to Render** above.
+Click **Deploy to Cloudflare** above.
 
-Render builds and runs the MCP server from this repository. When deployment finishes, the endpoint is:
+Cloudflare will clone the repository, build the widget, deploy the Worker, and give you a public `workers.dev` URL.
+
+No database, KV, Durable Object, API key, or other Cloudflare resource is required.
+
+After deployment, your MCP endpoint is:
 
 ```text
-https://<your-service>.onrender.com/mcp
+https://<your-worker>.<your-subdomain>.workers.dev/mcp
 ```
 
 Health check:
 
 ```text
-https://<your-service>.onrender.com/health
+https://<your-worker>.<your-subdomain>.workers.dev/health
 ```
 
 ### 2. Add it to ChatGPT Web
@@ -62,35 +68,92 @@ as a follow-up message
 ChatGPT continues the task
 ```
 
-The tool supports single choice, multiple choice, optional free text, and free-text-only questions.
+The tool supports:
+
+- single choice
+- multiple choice
+- optional free text
+- free-text-only questions
+- short context/explanation text
+- custom submit button labels
 
 ## ChatGPT-native appearance
 
-The widget uses OpenAI's official `@openai/apps-sdk-ui` package together with MCP host styling via `useHostStyles()`. It inherits the host typography and theme variables, so ChatGPT light/dark mode is handled by the host instead of a separate hand-written theme.
+The widget uses OpenAI's official `@openai/apps-sdk-ui` package together with MCP host styling via `useHostStyles()`.
+
+It inherits ChatGPT's typography and host theme variables, so light/dark mode follows ChatGPT automatically instead of using a separate hand-written theme.
+
+## Architecture
+
+```text
+ChatGPT Web
+    │
+    │ Streamable HTTP MCP
+    ▼
+Cloudflare Worker
+    │
+    ├── ask_user tool
+    │
+    └── embedded self-contained widget HTML
+             │
+             ▼
+        ChatGPT iframe
+             │
+             └── sendFollowUpMessage()
+                     │
+                     ▼
+               same conversation
+```
+
+The Worker is stateless. There is no database and no conversation storage.
 
 ## Scope
 
-This repository is intentionally only for the **remote ChatGPT Web MCP** use case:
+This repository is intentionally only for the **ChatGPT Web remote MCP** use case:
 
-- one remote Streamable HTTP MCP endpoint
+- one Cloudflare Worker
+- one public `/mcp` endpoint
 - one `ask_user` tool
 - one interactive UI widget
 - no database
 - no user data storage
-- no Docker image
+- no Docker
 - no npm/CLI distribution
+- no Render service
 - no other MCP-client compatibility work
 
-The public demo endpoint uses **no authentication** because the tool only renders a question and sends the answer back into the current ChatGPT conversation.
+## Local development
+
+Requirements: Node.js 20+.
+
+```bash
+npm install
+npm run build
+npm run dev
+```
+
+Wrangler will start the Worker locally. ChatGPT Web still requires a public HTTPS endpoint, so local mode is mainly for development and MCP Inspector testing.
+
+## Deployment from the CLI
+
+If you already use Wrangler:
+
+```bash
+npm install
+npm run deploy
+```
 
 ## Implementation
 
-- MCP server: `@modelcontextprotocol/sdk`
+- MCP server: `@modelcontextprotocol/server`
+- Cloudflare MCP transport: `createMcpHandler` from `agents/mcp/server`
 - MCP App binding: `@modelcontextprotocol/ext-apps`
 - UI: React + official `@openai/apps-sdk-ui`
-- Theme: host-provided styles / light-dark mode
+- Theme: MCP host styles / ChatGPT light-dark mode
 - Continuation: ChatGPT `sendFollowUpMessage()`, with MCP Apps `sendMessage()` fallback
-- Deployment: Render Blueprint via `render.yaml`
+- Widget bundle: Vite + `vite-plugin-singlefile`
+- Hosting: Cloudflare Workers
+- Storage: none
 
 ## License
 
