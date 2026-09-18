@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: chatgpt-ask-user-mcp
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
