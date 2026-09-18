@@ -45,8 +45,14 @@ type OpenAiWidgetBridge = {
   }) => Promise<void>;
 };
 
+const STORAGE_PREFIX = "ask-user-state:";
+
 function getOpenAiBridge(): OpenAiWidgetBridge | undefined {
   return (window as typeof window & { openai?: OpenAiWidgetBridge }).openai;
+}
+
+function storageKey(sessionId: string): string {
+  return `${STORAGE_PREFIX}${sessionId}`;
 }
 
 function isPersistedWidgetState(value: unknown): value is PersistedWidgetState {
@@ -60,6 +66,51 @@ function isPersistedWidgetState(value: unknown): value is PersistedWidgetState {
     typeof state.submitted === "boolean" &&
     typeof state.detailsExpanded === "boolean"
   );
+}
+
+function readLocalWidgetState(
+  sessionId: string,
+): PersistedWidgetState | undefined {
+  try {
+    const raw = window.localStorage.getItem(storageKey(sessionId));
+    if (!raw) return undefined;
+    const parsed: unknown = JSON.parse(raw);
+    return isPersistedWidgetState(parsed) && parsed.sessionId === sessionId
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocalWidgetState(state: PersistedWidgetState): void {
+  try {
+    window.localStorage.setItem(storageKey(state.sessionId), JSON.stringify(state));
+  } catch {
+    // Some hosts may disable storage. ChatGPT widgetState remains the fallback.
+  }
+}
+
+function readPersistedWidgetState(
+  sessionId: string,
+): PersistedWidgetState | undefined {
+  const hostState = getOpenAiBridge()?.widgetState;
+  if (
+    isPersistedWidgetState(hostState) &&
+    hostState.sessionId === sessionId
+  ) {
+    return hostState;
+  }
+
+  return readLocalWidgetState(sessionId);
+}
+
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
 }
 
 function ChevronIcon({
@@ -121,17 +172,14 @@ function App() {
     onAppCreated: (createdApp: McpApp) => {
       createdApp.ontoolresult = (result) => {
         const nextData = result.structuredContent as unknown as AskUserData;
-        const hostState = getOpenAiBridge()?.widgetState;
+        const persistedState = readPersistedWidgetState(nextData.sessionId);
 
         setData(nextData);
-        if (
-          isPersistedWidgetState(hostState) &&
-          hostState.sessionId === nextData.sessionId
-        ) {
-          setSelectedIds(hostState.selectedIds);
-          setOtherText(hostState.otherText);
-          setSubmitted(hostState.submitted);
-          setDetailsExpanded(hostState.detailsExpanded);
+        if (persistedState) {
+          setSelectedIds(persistedState.selectedIds);
+          setOtherText(persistedState.otherText);
+          setSubmitted(persistedState.submitted);
+          setDetailsExpanded(persistedState.detailsExpanded);
         } else {
           setSelectedIds([]);
           setOtherText("");
@@ -161,7 +209,7 @@ function App() {
       }
     };
 
-    restoreState(getOpenAiBridge()?.widgetState);
+    restoreState(readPersistedWidgetState(data.sessionId));
 
     const handleGlobals = (event: Event) => {
       const globals = (
@@ -242,7 +290,14 @@ function App() {
       ...overrides,
     };
 
-    await getOpenAiBridge()?.setWidgetState?.(nextState);
+    // Persist synchronously before the host can remount the iframe.
+    writeLocalWidgetState(nextState);
+
+    try {
+      await getOpenAiBridge()?.setWidgetState?.(nextState);
+    } catch {
+      // localStorage is the durable fallback for hosts where widgetState fails.
+    }
   };
 
   const setSubmittedExpanded = (expanded: boolean) => {
@@ -282,10 +337,14 @@ function App() {
     try {
       setSubmitted(true);
       setDetailsExpanded(false);
-      await persistWidgetState({
+      void persistWidgetState({
         submitted: true,
         detailsExpanded: false,
       });
+
+      // Let React commit and the browser paint the compact submitted state
+      // before sendFollowUpMessage can cause ChatGPT to remount the widget.
+      await waitForPaint();
 
       if (openai?.sendFollowUpMessage) {
         await openai.sendFollowUpMessage({
@@ -306,14 +365,10 @@ function App() {
     } catch (submitError) {
       setSubmitted(false);
       setDetailsExpanded(false);
-      try {
-        await persistWidgetState({
-          submitted: false,
-          detailsExpanded: false,
-        });
-      } catch {
-        // Preserve the original submission error below.
-      }
+      await persistWidgetState({
+        submitted: false,
+        detailsExpanded: false,
+      });
       setErrorText(
         submitError instanceof Error
           ? submitError.message
