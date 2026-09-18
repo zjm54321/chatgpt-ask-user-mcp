@@ -188,15 +188,17 @@ function App() {
   };
 
   const selectionSummary =
-    selectedChoices.length > 0
-      ? `已选择：${selectedChoices.map((choice) => choice.label).join("、")}`
-      : hasOtherText
-        ? "已填写回答"
-        : data.allowMultiple
-          ? "可选择多个选项"
-          : freeTextOnly
-            ? "请输入回答后提交"
-            : "请选择一个选项";
+    selectedChoices.length > 0 && hasOtherText
+      ? `已选择：${selectedChoices.map((choice) => choice.label).join("、")} · 已填写补充内容`
+      : selectedChoices.length > 0
+        ? `已选择：${selectedChoices.map((choice) => choice.label).join("、")}`
+        : hasOtherText
+          ? "已填写回答"
+          : data.allowMultiple
+            ? "可选择多个选项"
+            : freeTextOnly
+              ? "请输入回答后提交"
+              : "请选择一个选项";
 
   return (
     <section className="ask-shell text-primary">
