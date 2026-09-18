@@ -11,7 +11,7 @@ import { z } from "zod";
 import widgetHtml from "../dist/widget.html";
 
 const SERVER_NAME = "chatgpt-ask-user-mcp";
-const SERVER_VERSION = "0.2.1";
+const SERVER_VERSION = "0.3.0";
 const ASK_USER_URI = "ui://ask-user/ask-user.html";
 const WIDGET_DOMAIN = "https://chatgpt-ask-user-mcp.zhangjm.workers.dev";
 
@@ -36,6 +36,7 @@ const outputChoiceSchema = z.object({
 });
 
 const askUserOutputSchema = z.object({
+  sessionId: z.string().min(1),
   question: z.string().min(1),
   options: z.array(outputChoiceSchema).max(8),
   allowMultiple: z.boolean(),
@@ -116,6 +117,7 @@ function createServer(): McpServer {
       submit_label,
       context,
     }) => {
+      const sessionId = crypto.randomUUID();
       const normalizedOptions = (options ?? []).map((option, index) => ({
         id: `option-${index + 1}`,
         label: option.label,
@@ -133,6 +135,7 @@ function createServer(): McpServer {
           },
         ],
         structuredContent: {
+          sessionId,
           question,
           options: normalizedOptions,
           allowMultiple: allow_multiple ?? false,
@@ -141,6 +144,9 @@ function createServer(): McpServer {
           placeholder: placeholder ?? "Type your answer…",
           submitLabel: submit_label ?? "Submit",
           context,
+        },
+        _meta: {
+          "openai/widgetSessionId": sessionId,
         },
       };
     },
