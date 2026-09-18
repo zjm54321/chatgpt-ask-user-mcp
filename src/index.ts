@@ -11,8 +11,9 @@ import { z } from "zod";
 import widgetHtml from "../dist/widget.html";
 
 const SERVER_NAME = "chatgpt-ask-user-mcp";
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.2.1";
 const ASK_USER_URI = "ui://ask-user/ask-user.html";
+const WIDGET_DOMAIN = "https://chatgpt-ask-user-mcp.zhangjm.workers.dev";
 
 const optionSchema = z.object({
   label: z.string().min(1).describe("Human-readable option label."),
@@ -25,6 +26,23 @@ const optionSchema = z.object({
     .string()
     .optional()
     .describe("Optional short explanation shown below the option."),
+});
+
+const outputChoiceSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  value: z.string().min(1),
+  description: z.string().optional(),
+});
+
+const askUserOutputSchema = z.object({
+  question: z.string().min(1),
+  options: z.array(outputChoiceSchema).max(8),
+  allowMultiple: z.boolean(),
+  allowOther: z.boolean(),
+  placeholder: z.string(),
+  submitLabel: z.string(),
+  context: z.string().optional(),
 });
 
 function createServer(): McpServer {
@@ -77,6 +95,7 @@ function createServer(): McpServer {
             "Optional one-sentence context explaining why the answer is needed.",
           ),
       }),
+      outputSchema: askUserOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -142,6 +161,20 @@ function createServer(): McpServer {
           uri: ASK_USER_URI,
           mimeType: RESOURCE_MIME_TYPE,
           text: widgetHtml,
+          _meta: {
+            ui: {
+              csp: {
+                connectDomains: [],
+                resourceDomains: [],
+              },
+              domain: WIDGET_DOMAIN,
+            },
+            "openai/widgetCSP": {
+              connect_domains: [],
+              resource_domains: [],
+            },
+            "openai/widgetDomain": WIDGET_DOMAIN,
+          },
         },
       ],
     }),
