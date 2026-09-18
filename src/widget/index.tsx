@@ -5,7 +5,6 @@ import {
   useHostStyles,
 } from "@modelcontextprotocol/ext-apps/react";
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps";
-import { Button } from "@openai/apps-sdk-ui/components/Button";
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -305,16 +304,14 @@ function App() {
           </div>
 
           {!submitted ? (
-            <Button
+            <button
               type="button"
-              color="primary"
-              variant="solid"
-              size="sm"
+              className="ask-submit"
               disabled={!hasAnswer || sending}
               onClick={submit}
             >
               {sending ? "提交中…" : submitLabel}
-            </Button>
+            </button>
           ) : null}
         </footer>
       </div>
