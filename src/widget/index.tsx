@@ -6,7 +6,6 @@ import {
 } from "@modelcontextprotocol/ext-apps/react";
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps";
 import { Button } from "@openai/apps-sdk-ui/components/Button";
-import { Textarea } from "@openai/apps-sdk-ui/components/Textarea";
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -29,6 +28,25 @@ type AskUserData = {
   context?: string;
 };
 
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="m3.5 8.2 2.6 2.5 6.1-6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function App() {
   const [data, setData] = useState<AskUserData | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -38,7 +56,7 @@ function App() {
   const [errorText, setErrorText] = useState<string | null>(null);
 
   const { app, error } = useApp({
-    appInfo: { name: "Ask User", version: "0.1.0" },
+    appInfo: { name: "Ask User", version: "0.2.1" },
     capabilities: {},
     onAppCreated: (createdApp: McpApp) => {
       createdApp.ontoolresult = (result) => {
@@ -62,23 +80,37 @@ function App() {
 
   if (error) {
     return (
-      <div className="p-3 text-sm text-secondary">
-        Unable to load the question: {error.message}
+      <div className="ask-shell">
+        <div className="ask-status ask-status-error">
+          无法加载提问卡片：{error.message}
+        </div>
       </div>
     );
   }
 
   if (!app || !data) {
     return (
-      <div className="p-3 text-sm text-secondary">
-        Waiting for the question…
+      <div className="ask-shell">
+        <div className="ask-status">正在加载问题…</div>
       </div>
     );
   }
 
   const freeTextOnly = data.options.length === 0;
-  const hasAnswer =
-    selectedChoices.length > 0 || (data.allowOther && otherText.trim().length > 0);
+  const hasOtherText = data.allowOther && otherText.trim().length > 0;
+  const hasAnswer = selectedChoices.length > 0 || hasOtherText;
+
+  const submitLabel =
+    !data.submitLabel || data.submitLabel === "Submit"
+      ? "提交"
+      : data.submitLabel;
+
+  const placeholder =
+    !data.placeholder || data.placeholder === "Type your answer…"
+      ? freeTextOnly
+        ? "请输入你的回答…"
+        : "如果上面的选项都不合适，也可以直接输入…"
+      : data.placeholder;
 
   const toggleChoice = (choice: Choice) => {
     if (submitted || sending) return;
@@ -105,15 +137,15 @@ function App() {
         ? selectedChoices
             .map((choice) => `- ${choice.label} (${choice.value})`)
             .join("\n")
-        : "(none)";
+        : "(未选择预设选项)";
 
     const freeText = otherText.trim();
     const followUp = [
-      "I answered the pending question from the Ask User MCP app.",
-      `Question: ${data.question}`,
-      `Selected answer(s):\n${selected}`,
-      freeText ? `Additional answer: ${freeText}` : "",
-      "Continue the previous task using this answer. Do not ask the same question again unless new information makes it necessary.",
+      "我已经回答了 Ask User 工具正在等待的问题。",
+      `问题：${data.question}`,
+      `选择：\n${selected}`,
+      freeText ? `补充回答：${freeText}` : "",
+      "请使用这个回答继续之前的任务；除非出现新的必要信息，否则不要重复询问同一个问题。",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -140,7 +172,7 @@ function App() {
         });
 
         if (result.isError) {
-          throw new Error("The host rejected the follow-up message.");
+          throw new Error("宿主拒绝了这条后续消息。");
         }
       }
 
@@ -149,124 +181,142 @@ function App() {
       setErrorText(
         submitError instanceof Error
           ? submitError.message
-          : "Failed to submit the answer.",
+          : "提交失败，请重试。",
       );
     } finally {
       setSending(false);
     }
   };
 
+  const selectionSummary =
+    selectedChoices.length > 0
+      ? `已选择：${selectedChoices.map((choice) => choice.label).join("、")}`
+      : hasOtherText
+        ? "已填写回答"
+        : data.allowMultiple
+          ? "可选择多个选项"
+          : freeTextOnly
+            ? "请输入回答后提交"
+            : "请选择一个选项";
+
   return (
-    <section className="w-full max-w-2xl bg-surface text-primary">
-      <div className="flex flex-col gap-3 p-1">
-        <header className="flex flex-col gap-1">
-          <h2 className="text-[15px] font-semibold leading-snug">
-            {data.question}
-          </h2>
+    <section className="ask-shell text-primary">
+      <div className="ask-card">
+        <header className="ask-header">
+          <h2 className="ask-title">{data.question}</h2>
           {data.context ? (
-            <p className="text-sm leading-snug text-secondary">
-              {data.context}
-            </p>
+            <p className="ask-context">{data.context}</p>
           ) : null}
         </header>
 
-        {data.options.length > 0 ? (
-          <div
-            className="flex flex-col gap-2"
-            role={data.allowMultiple ? "group" : "radiogroup"}
-            aria-label={data.question}
-          >
-            {data.options.map((choice) => {
-              const selected = selectedIds.includes(choice.id);
-              return (
-                <button
-                  key={choice.id}
-                  type="button"
-                  role={data.allowMultiple ? undefined : "radio"}
-                  aria-checked={data.allowMultiple ? undefined : selected}
-                  aria-pressed={data.allowMultiple ? selected : undefined}
-                  disabled={submitted || sending}
-                  onClick={() => toggleChoice(choice)}
-                  className={[
-                    "group flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition",
-                    "border-default bg-surface hover:bg-subtle",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-                    selected ? "border-primary/60 bg-subtle" : "",
-                    submitted || sending ? "cursor-default opacity-70" : "cursor-pointer",
-                  ].join(" ")}
-                >
-                  <span
-                    aria-hidden="true"
+        <div className="ask-body">
+          {data.options.length > 0 ? (
+            <div
+              className="ask-options"
+              role={data.allowMultiple ? "group" : "radiogroup"}
+              aria-label={data.question}
+            >
+              {data.options.map((choice) => {
+                const selected = selectedIds.includes(choice.id);
+
+                return (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    role={data.allowMultiple ? undefined : "radio"}
+                    aria-checked={data.allowMultiple ? undefined : selected}
+                    aria-pressed={data.allowMultiple ? selected : undefined}
+                    disabled={submitted || sending}
+                    onClick={() => toggleChoice(choice)}
                     className={[
-                      "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center border",
-                      data.allowMultiple ? "rounded-[5px]" : "rounded-full",
-                      selected ? "border-primary bg-primary" : "border-default bg-surface",
-                    ].join(" ")}
+                      "ask-option",
+                      selected ? "ask-option-selected" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                   >
-                    {selected ? (
-                      data.allowMultiple ? (
-                        <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none">
-                          <path
-                            d="m4 8.2 2.4 2.3L12 5.3"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="text-white"
-                          />
-                        </svg>
-                      ) : (
-                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                      )
-                    ) : null}
-                  </span>
-
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium leading-snug">
-                      {choice.label}
+                    <span
+                      className={[
+                        "ask-indicator",
+                        data.allowMultiple
+                          ? "ask-indicator-checkbox"
+                          : "ask-indicator-radio",
+                        selected ? "ask-indicator-selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {selected ? (
+                        data.allowMultiple ? (
+                          <CheckIcon className="h-3 w-3" />
+                        ) : (
+                          <span className="ask-radio-dot" />
+                        )
+                      ) : null}
                     </span>
-                    {choice.description ? (
-                      <span className="mt-0.5 block text-xs leading-snug text-secondary">
-                        {choice.description}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
 
-        {data.allowOther ? (
-          <Textarea
-            value={otherText}
-            onChange={(event) => setOtherText(event.target.value)}
-            placeholder={data.placeholder}
-            rows={freeTextOnly ? 3 : 2}
-            disabled={submitted || sending}
-            aria-label={freeTextOnly ? data.question : "Other answer"}
-          />
-        ) : null}
-
-        {errorText ? (
-          <p className="text-xs text-danger">{errorText}</p>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2 pt-0.5">
-          {submitted ? (
-            <span className="text-xs text-secondary">Answer submitted</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="ask-option-label">{choice.label}</span>
+                      {choice.description ? (
+                        <span className="ask-option-description">
+                          {choice.description}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           ) : null}
-          <Button
-            type="button"
-            color="primary"
-            variant="solid"
-            size="sm"
-            disabled={!hasAnswer || submitted || sending}
-            onClick={submit}
-          >
-            {sending ? "Sending…" : data.submitLabel}
-          </Button>
+
+          {data.allowOther ? (
+            <div className={data.options.length > 0 ? "mt-3" : ""}>
+              <textarea
+                value={otherText}
+                onChange={(event) => setOtherText(event.target.value)}
+                placeholder={placeholder}
+                rows={freeTextOnly ? 4 : 3}
+                disabled={submitted || sending}
+                aria-label={freeTextOnly ? data.question : "补充回答"}
+                className="ask-textarea"
+              />
+            </div>
+          ) : null}
+
+          {errorText ? (
+            <div className="ask-error" role="alert">
+              {errorText}
+            </div>
+          ) : null}
         </div>
+
+        <footer className="ask-footer">
+          <div className="ask-footer-status">
+            {submitted ? (
+              <span className="ask-submitted">
+                <span className="ask-submitted-icon">
+                  <CheckIcon className="h-3 w-3" />
+                </span>
+                已提交
+              </span>
+            ) : (
+              <span className="truncate">{selectionSummary}</span>
+            )}
+          </div>
+
+          {!submitted ? (
+            <Button
+              type="button"
+              color="primary"
+              variant="solid"
+              size="sm"
+              disabled={!hasAnswer || sending}
+              onClick={submit}
+            >
+              {sending ? "提交中…" : submitLabel}
+            </Button>
+          ) : null}
+        </footer>
       </div>
     </section>
   );
