@@ -11,6 +11,265 @@ body,
   background: transparent;
 }
 
+html,
+body {
+  color-scheme: light dark;
+}
+
 body {
   font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ask-shell {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 680px;
+  padding: 6px 2px 8px;
+}
+
+.ask-card {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, currentColor 2.5%, transparent);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 6px 18px rgb(0 0 0 / 0.035);
+}
+
+.ask-header {
+  padding: 17px 18px 13px;
+}
+
+.ask-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.ask-context {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: color-mix(in srgb, currentColor 64%, transparent);
+}
+
+.ask-body {
+  padding: 0 12px 12px;
+}
+
+.ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.ask-option {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 11px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 13px;
+  padding: 11px 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ask-option:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.ask-option:active:not(:disabled) {
+  transform: scale(0.995);
+}
+
+.ask-option:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, currentColor 38%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.ask-option:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.ask-option-selected {
+  border-color: color-mix(in srgb, currentColor 32%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.ask-indicator {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  border: 1.5px solid color-mix(in srgb, currentColor 28%, transparent);
+  color: Canvas;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.ask-indicator-radio {
+  border-radius: 999px;
+}
+
+.ask-indicator-checkbox {
+  border-radius: 5px;
+}
+
+.ask-indicator-selected {
+  border-color: currentColor;
+  background: currentColor;
+}
+
+.ask-radio-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: Canvas;
+}
+
+.ask-option-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 540;
+  line-height: 1.45;
+}
+
+.ask-option-description {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+.ask-textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 78px;
+  resize: vertical;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border-radius: 13px;
+  padding: 10px 12px;
+  background: transparent;
+  color: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.ask-textarea::placeholder {
+  color: color-mix(in srgb, currentColor 42%, transparent);
+}
+
+.ask-textarea:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+.ask-textarea:focus {
+  border-color: color-mix(in srgb, currentColor 34%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.ask-textarea:disabled {
+  opacity: 0.72;
+}
+
+.ask-footer {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  padding: 9px 12px 9px 16px;
+  background: color-mix(in srgb, currentColor 2%, transparent);
+}
+
+.ask-footer-status {
+  min-width: 0;
+  flex: 1;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+}
+
+.ask-submitted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ask-submitted-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  color: inherit;
+}
+
+.ask-error {
+  margin-top: 8px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgb(220 38 38 / 0.08);
+  color: rgb(220 38 38);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.ask-status {
+  padding: 12px 14px;
+  color: color-mix(in srgb, currentColor 62%, transparent);
+  font-size: 13px;
+}
+
+.ask-status-error {
+  color: rgb(220 38 38);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-option,
+  .ask-indicator,
+  .ask-textarea {
+    transition: none;
+  }
 }
