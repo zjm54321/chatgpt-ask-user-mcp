@@ -27,6 +27,31 @@ type AskUserData = {
   context?: string;
 };
 
+function ChevronIcon({
+  expanded,
+  className = "",
+}: {
+  expanded: boolean;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d={expanded ? "m4 10 4-4 4 4" : "m4 6 4 4 4-4"}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function CheckIcon({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -51,6 +76,7 @@ function App() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [otherText, setOtherText] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [sending, setSending] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
@@ -63,6 +89,7 @@ function App() {
         setSelectedIds([]);
         setOtherText("");
         setSubmitted(false);
+        setDetailsExpanded(false);
         setErrorText(null);
       };
     },
@@ -176,6 +203,7 @@ function App() {
       }
 
       setSubmitted(true);
+      setDetailsExpanded(false);
     } catch (submitError) {
       setErrorText(
         submitError instanceof Error
@@ -186,6 +214,13 @@ function App() {
       setSending(false);
     }
   };
+
+  const submittedSummary =
+    selectedChoices.length > 0
+      ? selectedChoices.map((choice) => choice.label).join("、")
+      : otherText.trim()
+        ? otherText.trim()
+        : "已提交回答";
 
   const selectionSummary =
     selectedChoices.length > 0 && hasOtherText
@@ -210,6 +245,30 @@ function App() {
           ) : null}
         </header>
 
+        {submitted && !detailsExpanded ? (
+          <button
+            type="button"
+            className="ask-collapsed"
+            onClick={() => setDetailsExpanded(true)}
+            aria-expanded="false"
+            aria-label="展开已提交的完整选项"
+          >
+            <span className="ask-collapsed-check">
+              <CheckIcon className="h-3 w-3" />
+            </span>
+            <span className="ask-collapsed-content">
+              <span className="ask-collapsed-label">已选择</span>
+              <span className="ask-collapsed-value">{submittedSummary}</span>
+              {hasOtherText && selectedChoices.length > 0 ? (
+                <span className="ask-collapsed-note">含补充回答</span>
+              ) : null}
+            </span>
+            <span className="ask-collapse-toggle" aria-hidden="true">
+              <ChevronIcon expanded={false} className="h-4 w-4" />
+            </span>
+          </button>
+        ) : (
+          <>
         <div className="ask-body">
           {data.options.length > 0 ? (
             <div
@@ -314,8 +373,21 @@ function App() {
             >
               {sending ? "提交中…" : submitLabel}
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              className="ask-collapse-action"
+              onClick={() => setDetailsExpanded(false)}
+              aria-expanded="true"
+              aria-label="收起已提交的完整选项"
+            >
+              <span>收起</span>
+              <ChevronIcon expanded={true} className="h-4 w-4" />
+            </button>
+          )}
         </footer>
+          </>
+        )}
       </div>
     </section>
   );
