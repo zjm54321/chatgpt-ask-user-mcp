@@ -239,46 +239,63 @@ button {
   align-items: center;
   justify-content: center;
   margin: 0;
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
   border-radius: 10px;
   padding: 7px 16px;
-  background: light-dark(#111111, #3a3a3a);
-  color: #ffffff;
   font-size: 13.5px;
   font-weight: 600;
   line-height: 20px;
   text-align: center;
   cursor: pointer;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.08),
-    inset 0 0 0 1px rgb(255 255 255 / 0.025);
   transition:
     background-color 120ms ease,
+    border-color 120ms ease,
     transform 120ms ease,
+    box-shadow 120ms ease,
     opacity 120ms ease;
 }
 
-.ask-submit:hover:not(:disabled) {
-  background: light-dark(#242424, #454545);
-}
-
-.ask-submit:active:not(:disabled) {
-  transform: scale(0.985);
-  background: light-dark(#303030, #4a4a4a);
-}
-
-.ask-submit:focus-visible {
-  outline: none;
+button.ask-submit:not(:disabled) {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  border: 1px solid #3b82f6 !important;
+  background: #3b82f6 !important;
+  background-color: #3b82f6 !important;
+  background-image: none !important;
+  color: #ffffff !important;
   box-shadow:
-    0 0 0 3px color-mix(in srgb, currentColor 10%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.08);
+    0 1px 2px rgb(0 0 0 / 0.12),
+    0 1px 8px rgb(59 130 246 / 0.18) !important;
 }
 
-.ask-submit:disabled {
-  border-color: color-mix(in srgb, currentColor 8%, transparent);
-  background: color-mix(in srgb, currentColor 6%, transparent);
-  color: color-mix(in srgb, currentColor 30%, transparent);
-  box-shadow: none;
+button.ask-submit:not(:disabled):hover {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+  background-color: #2563eb !important;
+}
+
+button.ask-submit:not(:disabled):active {
+  transform: scale(0.985);
+  border-color: #1d4ed8 !important;
+  background: #1d4ed8 !important;
+  background-color: #1d4ed8 !important;
+}
+
+button.ask-submit:focus-visible {
+  outline: none !important;
+  box-shadow:
+    0 0 0 3px rgb(59 130 246 / 0.22),
+    0 1px 2px rgb(0 0 0 / 0.12) !important;
+}
+
+button.ask-submit:disabled {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  border: 1px solid color-mix(in srgb, currentColor 8%, transparent) !important;
+  background: color-mix(in srgb, currentColor 6%, transparent) !important;
+  background-color: color-mix(in srgb, currentColor 6%, transparent) !important;
+  background-image: none !important;
+  color: color-mix(in srgb, currentColor 30%, transparent) !important;
+  box-shadow: none !important;
   cursor: default;
 }
 
