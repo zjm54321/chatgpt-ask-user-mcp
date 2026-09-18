@@ -1,110 +1,99 @@
 # ChatGPT Ask User MCP
 
-A tiny MCP App that gives ChatGPT a structured **ask_user** tool. When the model needs a decision or clarification, it can render a ChatGPT-native question card with options and/or free text. After you submit an answer, the widget sends a follow-up message into the same conversation so ChatGPT can continue the task.
+A tiny **remote MCP App for ChatGPT Web**. It gives ChatGPT one tool, `ask_user`, so the model can stop at a decision point, show you a native-looking question card, receive your choice, and continue the same conversation.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fzjm54321%2Fchatgpt-ask-user-mcp)
 
-## What it looks like
+## Use it
 
-The UI intentionally uses OpenAI's official `@openai/apps-sdk-ui` components plus MCP host theme variables. It inherits ChatGPT's typography, colors, borders, and light/dark theme instead of maintaining a separate visual theme.
+### 1. Deploy
 
-Typical flow:
+Click **Deploy to Render** above.
 
-```text
-You ask ChatGPT to do a task
-        ↓
-ChatGPT reaches a decision point
-        ↓
-ChatGPT calls ask_user
-        ↓
-A native-looking choice/text card appears
-        ↓
-You submit an answer
-        ↓
-The widget sends a follow-up message
-        ↓
-ChatGPT continues the same task
-```
-
-## Tool schema
-
-`ask_user` supports:
-
-- a required question
-- up to 8 structured options
-- single-select or multi-select
-- optional free-text "other" input
-- free-text-only questions
-- an optional explanation/context line
-- a custom submit button label
-
-The tool response explicitly tells the model to stop and wait instead of choosing on your behalf.
-
-## One-click deployment
-
-Click **Deploy to Render** above. The included `render.yaml` creates a small Node web service.
-
-After Render finishes, your MCP endpoint is:
+Render builds and runs the MCP server from this repository. When deployment finishes, the endpoint is:
 
 ```text
-https://<your-render-service>.onrender.com/mcp
+https://<your-service>.onrender.com/mcp
 ```
 
 Health check:
 
 ```text
-https://<your-render-service>.onrender.com/health
+https://<your-service>.onrender.com/health
 ```
 
-This demo intentionally has no authentication. Treat the public endpoint as a non-sensitive utility tool.
+### 2. Add it to ChatGPT Web
 
-## Add it to ChatGPT Web
+1. Enable **Developer mode** in ChatGPT.
+2. Open **Settings → Apps → Create**.
+3. Enter the deployed URL ending in `/mcp`.
+4. Select **No authentication**.
+5. Choose **Scan tools**, then save/create the app.
+6. Enable/select the app in a chat.
 
-1. Enable **Developer mode** for your ChatGPT workspace/account.
-2. Open **Settings → Apps → Create** (workspace admins/owners can also create it from Workspace Settings → Apps).
-3. Enter the deployed MCP endpoint ending in `/mcp`.
-4. Choose **No authentication**.
-5. Click **Scan tools**, then create/save the app.
-6. In a chat, select or @mention the app for the message where you want ChatGPT to use it.
+Test prompt:
 
-A useful prompt for testing:
+> Work through this task. Whenever a choice would materially change the approach, use Ask User to ask me instead of deciding for me.
 
-> Work through this task. Whenever a choice would materially change the approach, use the Ask User app to ask me instead of deciding for me.
-
-## Local development
-
-Requirements: Node.js 20+.
-
-```bash
-npm install
-npm run typecheck
-npm run build
-npm start
-```
-
-The local server listens on:
+## Behavior
 
 ```text
-http://localhost:8000/mcp
+ChatGPT is doing a task
+        ↓
+needs your decision
+        ↓
+calls ask_user
+        ↓
+┌──────────────────────────────┐
+│ Which approach should I use? │
+│ ○ Option A                   │
+│ ○ Option B                   │
+│                              │
+│                    [Submit]  │
+└──────────────────────────────┘
+        ↓
+you submit
+        ↓
+the widget sends your answer
+as a follow-up message
+        ↓
+ChatGPT continues the task
 ```
 
-ChatGPT Web requires a remote MCP endpoint; it cannot connect directly to localhost.
+The tool supports single choice, multiple choice, optional free text, and free-text-only questions.
 
-## Design notes
+## ChatGPT-native appearance
 
-- **MCP transport:** stateless Streamable HTTP.
-- **UI binding:** `registerAppTool` + `registerAppResource` from `@modelcontextprotocol/ext-apps`.
-- **Theme:** `useHostStyles()` and the official Apps SDK UI CSS/components.
-- **Continuation:** `window.openai.sendFollowUpMessage()` on ChatGPT, with the MCP Apps `app.sendMessage()` API as a fallback.
-- **Self-contained widget:** built JavaScript and CSS are inlined into the MCP resource HTML, so no external asset domains are required.
+The widget uses OpenAI's official `@openai/apps-sdk-ui` package together with MCP host styling via `useHostStyles()`. It inherits the host typography and theme variables, so ChatGPT light/dark mode is handled by the host instead of a separate hand-written theme.
 
-## Security
+## Scope
 
-The server stores no conversation data and has no database. The submitted answer is sent back to the host conversation by the widget. If you expose additional tools later, add authentication and review their permissions separately.
+This repository is intentionally only for the **remote ChatGPT Web MCP** use case:
+
+- one remote Streamable HTTP MCP endpoint
+- one `ask_user` tool
+- one interactive UI widget
+- no database
+- no user data storage
+- no Docker image
+- no npm/CLI distribution
+- no other MCP-client compatibility work
+
+The public demo endpoint uses **no authentication** because the tool only renders a question and sends the answer back into the current ChatGPT conversation.
+
+## Implementation
+
+- MCP server: `@modelcontextprotocol/sdk`
+- MCP App binding: `@modelcontextprotocol/ext-apps`
+- UI: React + official `@openai/apps-sdk-ui`
+- Theme: host-provided styles / light-dark mode
+- Continuation: ChatGPT `sendFollowUpMessage()`, with MCP Apps `sendMessage()` fallback
+- Deployment: Render Blueprint via `render.yaml`
 
 ## License
 
 Copyright (C) 2026 zjm54321
 
-This project is licensed under the **GNU General Public License v3.0 only (GPL-3.0-only)**. See [LICENSE](LICENSE).
+Licensed under the **GNU General Public License v3.0 only (GPL-3.0-only)**. See [LICENSE](LICENSE).
