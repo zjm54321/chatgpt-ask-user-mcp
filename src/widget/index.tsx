@@ -5,7 +5,7 @@ import {
   useHostStyles,
 } from "@modelcontextprotocol/ext-apps/react";
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./index.css";
@@ -18,6 +18,7 @@ type Choice = {
 };
 
 type AskUserData = {
+  sessionId: string;
   question: string;
   options: Choice[];
   allowMultiple: boolean;
@@ -26,6 +27,40 @@ type AskUserData = {
   submitLabel: string;
   context?: string;
 };
+
+type PersistedWidgetState = {
+  sessionId: string;
+  selectedIds: string[];
+  otherText: string;
+  submitted: boolean;
+  detailsExpanded: boolean;
+};
+
+type OpenAiWidgetBridge = {
+  widgetState?: unknown;
+  setWidgetState?: (state: PersistedWidgetState) => Promise<void>;
+  sendFollowUpMessage?: (args: {
+    prompt: string;
+    scrollToBottom?: boolean;
+  }) => Promise<void>;
+};
+
+function getOpenAiBridge(): OpenAiWidgetBridge | undefined {
+  return (window as typeof window & { openai?: OpenAiWidgetBridge }).openai;
+}
+
+function isPersistedWidgetState(value: unknown): value is PersistedWidgetState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as Partial<PersistedWidgetState>;
+  return (
+    typeof state.sessionId === "string" &&
+    Array.isArray(state.selectedIds) &&
+    state.selectedIds.every((id) => typeof id === "string") &&
+    typeof state.otherText === "string" &&
+    typeof state.submitted === "boolean" &&
+    typeof state.detailsExpanded === "boolean"
+  );
+}
 
 function ChevronIcon({
   expanded,
@@ -81,15 +116,28 @@ function App() {
   const [errorText, setErrorText] = useState<string | null>(null);
 
   const { app, error } = useApp({
-    appInfo: { name: "Ask User", version: "0.2.1" },
+    appInfo: { name: "Ask User", version: "0.3.0" },
     capabilities: {},
     onAppCreated: (createdApp: McpApp) => {
       createdApp.ontoolresult = (result) => {
-        setData(result.structuredContent as unknown as AskUserData);
-        setSelectedIds([]);
-        setOtherText("");
-        setSubmitted(false);
-        setDetailsExpanded(false);
+        const nextData = result.structuredContent as unknown as AskUserData;
+        const hostState = getOpenAiBridge()?.widgetState;
+
+        setData(nextData);
+        if (
+          isPersistedWidgetState(hostState) &&
+          hostState.sessionId === nextData.sessionId
+        ) {
+          setSelectedIds(hostState.selectedIds);
+          setOtherText(hostState.otherText);
+          setSubmitted(hostState.submitted);
+          setDetailsExpanded(hostState.detailsExpanded);
+        } else {
+          setSelectedIds([]);
+          setOtherText("");
+          setSubmitted(false);
+          setDetailsExpanded(false);
+        }
         setErrorText(null);
       };
     },
@@ -97,6 +145,34 @@ function App() {
 
   useHostStyles(app, app?.getHostContext());
   useDocumentTheme();
+
+  useEffect(() => {
+    if (!data) return;
+
+    const restoreState = (candidate: unknown) => {
+      if (
+        isPersistedWidgetState(candidate) &&
+        candidate.sessionId === data.sessionId
+      ) {
+        setSelectedIds(candidate.selectedIds);
+        setOtherText(candidate.otherText);
+        setSubmitted(candidate.submitted);
+        setDetailsExpanded(candidate.detailsExpanded);
+      }
+    };
+
+    restoreState(getOpenAiBridge()?.widgetState);
+
+    const handleGlobals = (event: Event) => {
+      const globals = (
+        event as CustomEvent<{ globals?: { widgetState?: unknown } }>
+      ).detail?.globals;
+      restoreState(globals?.widgetState);
+    };
+
+    window.addEventListener("openai:set_globals", handleGlobals);
+    return () => window.removeEventListener("openai:set_globals", handleGlobals);
+  }, [data]);
 
   const selectedChoices = useMemo(
     () =>
@@ -152,6 +228,31 @@ function App() {
     });
   };
 
+  const persistWidgetState = async (
+    overrides: Partial<PersistedWidgetState> = {},
+  ) => {
+    if (!data) return;
+
+    const nextState: PersistedWidgetState = {
+      sessionId: data.sessionId,
+      selectedIds,
+      otherText,
+      submitted,
+      detailsExpanded,
+      ...overrides,
+    };
+
+    await getOpenAiBridge()?.setWidgetState?.(nextState);
+  };
+
+  const setSubmittedExpanded = (expanded: boolean) => {
+    setDetailsExpanded(expanded);
+    void persistWidgetState({
+      submitted: true,
+      detailsExpanded: expanded,
+    });
+  };
+
   const submit = async () => {
     if (!hasAnswer || submitted || sending) return;
 
@@ -176,15 +277,15 @@ function App() {
       .filter(Boolean)
       .join("\n\n");
 
+    const openai = getOpenAiBridge();
+
     try {
-      const openai = (window as typeof window & {
-        openai?: {
-          sendFollowUpMessage?: (args: {
-            prompt: string;
-            scrollToBottom?: boolean;
-          }) => Promise<void>;
-        };
-      }).openai;
+      setSubmitted(true);
+      setDetailsExpanded(false);
+      await persistWidgetState({
+        submitted: true,
+        detailsExpanded: false,
+      });
 
       if (openai?.sendFollowUpMessage) {
         await openai.sendFollowUpMessage({
@@ -202,9 +303,17 @@ function App() {
         }
       }
 
-      setSubmitted(true);
-      setDetailsExpanded(false);
     } catch (submitError) {
+      setSubmitted(false);
+      setDetailsExpanded(false);
+      try {
+        await persistWidgetState({
+          submitted: false,
+          detailsExpanded: false,
+        });
+      } catch {
+        // Preserve the original submission error below.
+      }
       setErrorText(
         submitError instanceof Error
           ? submitError.message
@@ -249,7 +358,7 @@ function App() {
           <button
             type="button"
             className="ask-collapsed"
-            onClick={() => setDetailsExpanded(true)}
+            onClick={() => setSubmittedExpanded(true)}
             aria-expanded="false"
             aria-label="展开已提交的完整选项"
           >
@@ -377,7 +486,7 @@ function App() {
             <button
               type="button"
               className="ask-collapse-action"
-              onClick={() => setDetailsExpanded(false)}
+              onClick={() => setSubmittedExpanded(false)}
               aria-expanded="true"
               aria-label="收起已提交的完整选项"
             >
