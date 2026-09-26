@@ -1,162 +1,139 @@
 # ChatGPT Ask User MCP
 
-A tiny **remote MCP App for ChatGPT Web**, deployed on **Cloudflare Workers**.
+A tiny remote MCP server for ChatGPT Web, deployed on Cloudflare Workers.
 
-It gives ChatGPT one tool, `ask_user`, so the model can stop at a decision point, show you a native-looking question card, receive your choice, and continue the same conversation.
+It gives ChatGPT one tool, ask_user. When the model needs a clarification or decision, the tool requests the information through standard MCP elicitation. The user's answer returns through the same MCP operation instead of the component posting a second user-authored chat message.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+## Why this version is different
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zjm54321/chatgpt-ask-user-mcp)
+Versions before 0.4 used a custom MCP App widget. Submitting the widget called ChatGPT's sendFollowUpMessage API, so the answer appeared as a new conversation message and started another chat turn.
 
-## Use it
+Version 0.4 removes that path entirely.
 
-### 1. Deploy to Cloudflare
+The flow is now:
 
-Click **Deploy to Cloudflare** above.
+~~~text
+User message
+    |
+    v
+ChatGPT calls ask_user
+    |
+    v
+MCP server returns input_required
+    |
+    v
+ChatGPT renders the elicitation form
+    |
+    v
+User answers
+    |
+    v
+The MCP client retries the original tool call
+with inputResponses
+    |
+    v
+ask_user returns the answer
+    |
+    v
+ChatGPT continues the original task
+~~~
 
-Cloudflare will clone the repository, build the widget, deploy the Worker, and give you a public `workers.dev` URL.
+There is no sendFollowUpMessage call, no app.sendMessage fallback, and no custom iframe widget.
 
-No database, KV, Durable Object, API key, or other Cloudflare resource is required.
+This removes the extra component-authored conversation message. It does not make any promise about how a particular ChatGPT plan accounts for model or tool usage internally.
 
-After deployment, your MCP endpoint is:
+## Features
 
-```text
+- single-choice questions
+- multiple-choice questions
+- optional free-text alongside choices
+- free-text-only questions
+- up to 8 choices
+- per-option labels, stable values, and descriptions
+- optional short context
+- stateless Cloudflare Worker
+- no database, KV, Durable Object, or conversation storage
+
+The elicitation UI itself is rendered by the MCP client. Button text, field placeholder styling, collapsing behavior, and other host UI details are therefore controlled by ChatGPT rather than by this server.
+
+## Requirements
+
+The MCP client must support MCP elicitation / multi-round-trip input_required handling. This server uses the current stateless MRTR flow and rejects legacy protocol connections that cannot complete it.
+
+## Deploy to Cloudflare
+
+1. Deploy this repository to Cloudflare Workers.
+2. The Worker exposes the MCP endpoint at:
+
+~~~text
 https://<your-worker>.<your-subdomain>.workers.dev/mcp
-```
+~~~
 
-Health check:
+3. Health check:
 
-```text
+~~~text
 https://<your-worker>.<your-subdomain>.workers.dev/health
-```
+~~~
 
-### 2. Add it to ChatGPT Web
+No additional Cloudflare storage service is required.
 
-1. Enable **Developer mode** in ChatGPT.
-2. Open **Settings → Apps → Create**.
-3. Enter the deployed URL ending in `/mcp`.
-4. Select **No authentication**.
-5. Choose **Scan tools**, then save/create the app.
-6. Enable/select the app in a chat.
+## Add it to ChatGPT Web
 
-Test prompt:
+1. Enable Developer mode in ChatGPT.
+2. Open Settings -> Apps -> Create.
+3. Enter the deployed URL ending in /mcp.
+4. Select No authentication.
+5. Scan tools and save the app.
+6. Enable the app in a chat.
+
+Example prompt:
 
 > Work through this task. Whenever a choice would materially change the approach, use Ask User to ask me instead of deciding for me.
 
-## Behavior
+## Tool input
 
-```text
-ChatGPT is doing a task
-        ↓
-needs your decision
-        ↓
-calls ask_user
-        ↓
-┌──────────────────────────────┐
-│ Which approach should I use? │
-│ ○ Option A                   │
-│ ○ Option B                   │
-│                              │
-│                    [Submit]  │
-└──────────────────────────────┘
-        ↓
-you submit
-        ↓
-the widget sends your answer
-as a follow-up message
-        ↓
-ChatGPT continues the task
-```
+ask_user accepts:
 
-The tool supports:
+- question: required question text.
+- options: optional list of up to 8 choices.
+- allow_multiple: whether more than one listed choice can be selected.
+- allow_other: whether the user can also provide free text.
+- context: optional short explanation for why the answer is needed.
 
-- single choice
-- multiple choice
-- optional free text
-- free-text-only questions
-- short context/explanation text
-- custom submit button labels
+When options is omitted or empty, the elicitation is a free-text question.
 
-## ChatGPT-native appearance
+## Implementation
 
-The widget uses OpenAI's official `@openai/apps-sdk-ui` package together with MCP host styling via `useHostStyles()`.
+- MCP server: @modelcontextprotocol/server v2
+- Cloudflare transport: createMcpHandler from agents/mcp/server
+- Human input: MCP input_required + elicitation
+- Hosting: Cloudflare Workers
+- Storage: none
+- UI: rendered by the MCP client
 
-It inherits ChatGPT's typography and host theme variables, so light/dark mode follows ChatGPT automatically instead of using a separate hand-written theme.
-
-## Architecture
-
-```text
-ChatGPT Web
-    │
-    │ Streamable HTTP MCP
-    ▼
-Cloudflare Worker
-    │
-    ├── ask_user tool
-    │
-    └── embedded self-contained widget HTML
-             │
-             ▼
-        ChatGPT iframe
-             │
-             └── sendFollowUpMessage()
-                     │
-                     ▼
-               same conversation
-```
-
-The Worker is stateless. There is no database and no conversation storage.
-
-## Scope
-
-This repository is intentionally only for the **ChatGPT Web remote MCP** use case:
-
-- one Cloudflare Worker
-- one public `/mcp` endpoint
-- one `ask_user` tool
-- one interactive UI widget
-- no database
-- no user data storage
-- no Docker
-- no npm/CLI distribution
-- no Render service
-- no other MCP-client compatibility work
+The Worker is stateless. On an input_required response, no Worker remains suspended while the user answers; the client retries the original operation with inputResponses.
 
 ## Local development
 
 Requirements: Node.js 20+.
 
-```bash
+~~~bash
 npm install
 npm run build
 npm run dev
-```
+~~~
 
-Wrangler will start the Worker locally. ChatGPT Web still requires a public HTTPS endpoint, so local mode is mainly for development and MCP Inspector testing.
+For MCP inspection, point a compatible inspector/client at the local or tunneled /mcp endpoint.
 
-## Deployment from the CLI
+## Deploy from the CLI
 
-If you already use Wrangler:
-
-```bash
+~~~bash
 npm install
 npm run deploy
-```
-
-## Implementation
-
-- MCP server: `@modelcontextprotocol/server`
-- Cloudflare MCP transport: `createMcpHandler` from `agents/mcp/server`
-- MCP App binding: `@modelcontextprotocol/ext-apps`
-- UI: React + official `@openai/apps-sdk-ui`
-- Theme: MCP host styles / ChatGPT light-dark mode
-- Continuation: ChatGPT `sendFollowUpMessage()`, with MCP Apps `sendMessage()` fallback
-- Widget bundle: Vite + `vite-plugin-singlefile`
-- Hosting: Cloudflare Workers
-- Storage: none
+~~~
 
 ## License
 
 Copyright (C) 2026 zjm54321
 
-Licensed under the **GNU General Public License v3.0 only (GPL-3.0-only)**. See [LICENSE](LICENSE).
+Licensed under the GNU General Public License v3.0 only (GPL-3.0-only). See LICENSE.
