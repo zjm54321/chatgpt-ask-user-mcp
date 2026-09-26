@@ -1,10 +1,10 @@
 {
   "name": "chatgpt-ask-user-mcp",
-  "version": "0.4.1-blocking-test",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
-  "description": "Temporary experiment for testing whether ChatGPT mounts an MCP App while its tool call is still pending.",
+  "description": "A tiny remote MCP server that asks users questions through MCP elicitation without posting a follow-up chat message.",
   "engines": {
     "node": ">=20"
   },
@@ -15,7 +15,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "^0.23.0",
     "zod": "^4.5.4"
