@@ -11,8 +11,8 @@ import { z } from "zod";
 import widgetHtml from "../dist/widget.html";
 
 const SERVER_NAME = "chatgpt-ask-user-mcp";
-const SERVER_VERSION = "0.5.0-two-stage-test";
-const ASK_USER_URI = "ui://ask-user/ask-user.html";
+const SERVER_VERSION = "0.5.1-two-stage-test";
+const ASK_USER_URI = "ui://ask-user/two-stage-v1.html";
 const WIDGET_DOMAIN = "https://chatgpt-ask-user-mcp.zhangjm.workers.dev";
 const WAIT_PREFIX = "__WAIT__:";
 
