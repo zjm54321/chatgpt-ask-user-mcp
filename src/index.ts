@@ -1,399 +1,370 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import {
-  McpServer,
-  acceptedContent,
-  inputRequired,
-  inputResponse,
-  type ElicitRequestFormParams,
-} from "@modelcontextprotocol/server";
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+} from "@modelcontextprotocol/ext-apps/server";
+import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
+import widgetHtml from "../dist/widget.html";
+
 const SERVER_NAME = "chatgpt-ask-user-mcp";
-const SERVER_VERSION = "0.4.0";
+const SERVER_VERSION = "0.5.0-two-stage-test";
+const ASK_USER_URI = "ui://ask-user/ask-user.html";
+const WIDGET_DOMAIN = "https://chatgpt-ask-user-mcp.zhangjm.workers.dev";
+const WAIT_PREFIX = "__WAIT__:";
+
+interface Env {
+  ASK_SESSIONS: DurableObjectNamespace;
+}
+
+type StoredAnswer = {
+  selectedIds: string[];
+  otherText: string;
+};
+
+type WaitResult =
+  | { status: "answered"; answer: StoredAnswer }
+  | { status: "timeout" };
 
 const optionSchema = z.object({
   label: z.string().min(1).describe("Human-readable option label."),
-  value: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("Stable option value. Defaults to the label when omitted."),
-  description: z
-    .string()
-    .optional()
-    .describe("Optional short explanation for the option."),
+  value: z.string().min(1).optional(),
+  description: z.string().optional(),
 });
 
-type AskOption = z.infer<typeof optionSchema>;
+const outputChoiceSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  value: z.string().min(1),
+  description: z.string().optional(),
+});
 
-type NormalizedOption = {
-  id: string;
-  label: string;
-  value: string;
-  description?: string;
-};
+const askUserOutputSchema = z.object({
+  question: z.string().min(1),
+  options: z.array(outputChoiceSchema).max(8),
+  allowMultiple: z.boolean(),
+  allowOther: z.boolean(),
+  placeholder: z.string(),
+  submitLabel: z.string(),
+  context: z.string().optional(),
+});
 
-type ElicitedAnswer = {
-  answer?: string;
-  choice?: string;
-  choices?: string[];
-  other?: string;
-};
+export class AskSession {
+  private waiter:
+    | ((result: WaitResult) => void)
+    | undefined;
 
-function normalizeOptions(options: AskOption[]): NormalizedOption[] {
-  return options.map((option, index) => ({
-    id: "option-" + (index + 1),
-    label: option.label,
-    value: option.value ?? option.label,
-    description: option.description,
-  }));
-}
+  constructor(
+    private readonly state: DurableObjectState,
+    private readonly env: Env,
+  ) {}
 
-function optionTitle(option: NormalizedOption): string {
-  return option.description
-    ? option.label + " — " + option.description
-    : option.label;
-}
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
 
-function buildRequestedSchema(
-  options: NormalizedOption[],
-  allowMultiple: boolean,
-  allowOther: boolean,
-): ElicitRequestFormParams["requestedSchema"] {
-  if (options.length === 0) {
-    return {
-      type: "object",
-      properties: {
-        answer: {
-          type: "string",
-          title: "Answer",
-          description: "Type your answer.",
-          minLength: 1,
-        },
-      },
-      required: ["answer"],
-    };
-  }
-
-  const titledOptions = options.map((option) => ({
-    const: option.id,
-    title: optionTitle(option),
-  }));
-
-  const properties: ElicitRequestFormParams["requestedSchema"]["properties"] =
-    {};
-
-  if (allowMultiple) {
-    properties.choices = {
-      type: "array",
-      title: "Choices",
-      items: {
-        anyOf: titledOptions,
-      },
-      minItems: allowOther ? 0 : 1,
-      maxItems: options.length,
-    };
-  } else {
-    properties.choice = {
-      type: "string",
-      title: "Choice",
-      oneOf: titledOptions,
-    };
-  }
-
-  if (allowOther) {
-    properties.other = {
-      type: "string",
-      title: "Other / additional answer",
-      description:
-        "Use this field when the listed choices do not fully express your answer.",
-      minLength: 1,
-    };
-  }
-
-  const required = allowOther
-    ? []
-    : [allowMultiple ? "choices" : "choice"];
-
-  return required.length > 0
-    ? { type: "object", properties, required }
-    : { type: "object", properties };
-}
-
-function buildAnswerValidator(
-  options: NormalizedOption[],
-  allowMultiple: boolean,
-  allowOther: boolean,
-) {
-  if (options.length === 0) {
-    return z.object({
-      answer: z.string().trim().min(1),
-    });
-  }
-
-  const allowedIds = new Set(options.map((option) => option.id));
-  const selectedId = z
-    .string()
-    .refine((value) => allowedIds.has(value), "Unknown option.");
-
-  const optionalOther = z.preprocess(
-    (value) =>
-      typeof value === "string" && value.trim().length === 0
-        ? undefined
-        : value,
-    z.string().trim().min(1).optional(),
-  );
-
-  if (allowMultiple) {
-    const selectedIds = z
-      .array(selectedId)
-      .min(1)
-      .max(options.length)
-      .refine(
-        (values) => new Set(values).size === values.length,
-        "Duplicate options are not allowed.",
-      );
-
-    if (!allowOther) {
-      return z.object({ choices: selectedIds });
+    if (request.method === "POST" && url.pathname === "/init") {
+      await this.state.storage.delete("answer");
+      return Response.json({ ok: true });
     }
 
-    const optionalSelectedIds = z.preprocess(
-      (value) =>
-        Array.isArray(value) && value.length === 0 ? undefined : value,
-      selectedIds.optional(),
-    );
+    if (request.method === "POST" && url.pathname === "/answer") {
+      const body = (await request.json()) as Partial<StoredAnswer>;
+      const answer: StoredAnswer = {
+        selectedIds: Array.isArray(body.selectedIds)
+          ? body.selectedIds.filter((id): id is string => typeof id === "string")
+          : [],
+        otherText:
+          typeof body.otherText === "string" ? body.otherText.trim() : "",
+      };
 
-    return z
-      .object({
-        choices: optionalSelectedIds,
-        other: optionalOther,
-      })
-      .refine(
-        (value) => (value.choices?.length ?? 0) > 0 || Boolean(value.other),
-        "Choose at least one option or provide another answer.",
-      );
+      if (answer.selectedIds.length === 0 && !answer.otherText) {
+        return Response.json(
+          { ok: false, error: "empty answer" },
+          { status: 400 },
+        );
+      }
+
+      await this.state.storage.put("answer", answer);
+      this.waiter?.({ status: "answered", answer });
+      this.waiter = undefined;
+
+      return Response.json({ ok: true });
+    }
+
+    if (request.method === "GET" && url.pathname === "/wait") {
+      const existing =
+        await this.state.storage.get<StoredAnswer>("answer");
+
+      if (existing) {
+        return Response.json({
+          status: "answered",
+          answer: existing,
+        } satisfies WaitResult);
+      }
+
+      const result = await new Promise<WaitResult>((resolve) => {
+        let settled = false;
+
+        const finish = (value: WaitResult) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
+
+        this.waiter = finish;
+
+        setTimeout(() => {
+          if (this.waiter === finish) {
+            this.waiter = undefined;
+          }
+          finish({ status: "timeout" });
+        }, 90_000);
+      });
+
+      return Response.json(result);
+    }
+
+    return new Response("Not Found", { status: 404 });
   }
-
-  if (!allowOther) {
-    return z.object({ choice: selectedId });
-  }
-
-  const optionalSelectedId = z.preprocess(
-    (value) =>
-      typeof value === "string" && value.length === 0 ? undefined : value,
-    selectedId.optional(),
-  );
-
-  return z
-    .object({
-      choice: optionalSelectedId,
-      other: optionalOther,
-    })
-    .refine(
-      (value) => Boolean(value.choice) || Boolean(value.other),
-      "Choose an option or provide another answer.",
-    );
 }
 
-function requestAnswer(
-  question: string,
-  context: string | undefined,
-  requestedSchema: ElicitRequestFormParams["requestedSchema"],
-) {
-  const message = context
-    ? question + "\n\nContext: " + context
-    : question;
-
-  return inputRequired({
-    inputRequests: {
-      answer: inputRequired.elicit({
-        message,
-        requestedSchema,
-      }),
-    },
-  });
+function sessionStub(env: Env, sessionId: string): DurableObjectStub {
+  const id = env.ASK_SESSIONS.idFromName(sessionId);
+  return env.ASK_SESSIONS.get(id);
 }
 
-function buildAnswerResult(
-  question: string,
-  options: NormalizedOption[],
-  answer: ElicitedAnswer,
-) {
-  const selectedIds = answer.choices ?? (answer.choice ? [answer.choice] : []);
-  const selected = selectedIds
-    .map((id) => options.find((option) => option.id === id))
-    .filter((option): option is NormalizedOption => Boolean(option))
-    .map((option) => ({
-      label: option.label,
-      value: option.value,
-      ...(option.description ? { description: option.description } : {}),
-    }));
-
-  return {
-    status: "answered",
-    question,
-    ...(selected.length > 0 ? { selected } : {}),
-    ...(answer.answer ? { answer: answer.answer } : {}),
-    ...(answer.other ? { other: answer.other } : {}),
-  };
-}
-
-function createServer(): McpServer {
+function createServer(env: Env): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
     version: SERVER_VERSION,
   });
 
-  server.registerTool(
+  registerAppTool(
+    server,
     "ask_user",
     {
       title: "Ask User",
       description:
-        "Ask the user a structured clarification or decision question using MCP elicitation. " +
-        "Use this when the user's answer materially affects how the current task should continue, " +
-        "when multiple reasonable paths exist, or when the user explicitly asks to be consulted. " +
-        "The answer returns through the same MCP tool call; do not replace this with a chat follow-up message.",
+        "Two-stage Ask User experiment. On a normal question, create an interactive widget and return immediately. " +
+        "Then call this same tool again in the SAME assistant turn with question set exactly to __WAIT__:<session-id> " +
+        "from the returned context. The second call waits for the widget answer and returns it without posting a new user message.",
       inputSchema: z.object({
-        question: z.string().min(1).describe("The question to show the user."),
-        options: z
-          .array(optionSchema)
-          .max(8)
-          .optional()
-          .describe(
-            "Optional choices. Omit or use an empty array for a free-text question.",
-          ),
-        allow_multiple: z
-          .boolean()
-          .optional()
-          .describe("Allow selecting more than one option. Defaults to false."),
-        allow_other: z
-          .boolean()
-          .optional()
-          .describe(
-            "Allow an additional free-text answer alongside the choices. Defaults to false; free-text-only questions always accept text.",
-          ),
-        context: z
-          .string()
-          .optional()
-          .describe(
-            "Optional one-sentence context explaining why the answer is needed.",
-          ),
+        question: z.string().min(1),
+        options: z.array(optionSchema).max(8).optional(),
+        allow_multiple: z.boolean().optional(),
+        allow_other: z.boolean().optional(),
+        placeholder: z.string().optional(),
+        submit_label: z.string().optional(),
+        context: z.string().optional(),
       }),
+      outputSchema: askUserOutputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
         openWorldHint: false,
       },
-    },
-    async (
-      {
-        question,
-        options: rawOptions,
-        allow_multiple,
-        allow_other,
-        context,
+      _meta: {
+        ui: {
+          resourceUri: ASK_USER_URI,
+        },
       },
-      toolContext,
-    ) => {
-      const options = normalizeOptions(rawOptions ?? []);
-      const allowMultiple = allow_multiple ?? false;
-      const allowOther =
-        options.length === 0 ? true : (allow_other ?? false);
+    },
+    async ({
+      question,
+      options,
+      allow_multiple,
+      allow_other,
+      placeholder,
+      submit_label,
+      context,
+    }) => {
+      if (question.startsWith(WAIT_PREFIX)) {
+        const sessionId = question.slice(WAIT_PREFIX.length).trim();
 
-      const requestedSchema = buildRequestedSchema(
-        options,
-        allowMultiple,
-        allowOther,
-      );
+        if (!sessionId) {
+          throw new Error("Missing wait session id.");
+        }
 
-      const response = inputResponse(
-        toolContext.mcpReq.inputResponses,
-        "answer",
-      );
+        const response = await sessionStub(env, sessionId).fetch(
+          "https://ask-session/wait",
+        );
+        const result = (await response.json()) as WaitResult;
 
-      if (response.kind === "missing") {
-        return requestAnswer(question, context, requestedSchema);
-      }
+        if (result.status === "timeout") {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  "Ask User wait timed out without a widget answer. Do not fabricate a user choice.",
+              },
+            ],
+            structuredContent: {
+              question: "Ask User wait timed out",
+              options: [],
+              allowMultiple: false,
+              allowOther: false,
+              placeholder: "",
+              submitLabel: "Submit",
+              context: "WAIT_TIMEOUT",
+            },
+          };
+        }
 
-      if (response.kind !== "elicit") {
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({
-                status: "error",
-                question,
-                error: "Unexpected MCP input response type.",
-              }),
+              text:
+                "The user answered the already-mounted Ask User widget. Continue the original task in this same assistant turn. Answer payload: " +
+                JSON.stringify(result.answer),
             },
           ],
-          isError: true,
+          structuredContent: {
+            question: "User answered the Ask User widget",
+            options: [],
+            allowMultiple: false,
+            allowOther: false,
+            placeholder: "",
+            submitLabel: "Submit",
+            context: "ANSWER_JSON:" + JSON.stringify(result.answer),
+          },
         };
       }
 
-      if (response.action !== "accept") {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                status: response.action,
-                question,
-              }),
-            },
-          ],
-        };
-      }
+      const sessionId = crypto.randomUUID();
+      const normalizedOptions = (options ?? []).map((option, index) => ({
+        id: `option-${index + 1}`,
+        label: option.label,
+        value: option.value ?? option.label,
+        description: option.description,
+      }));
 
-      const validator = buildAnswerValidator(
-        options,
-        allowMultiple,
-        allowOther,
-      );
-      const accepted = acceptedContent(
-        toolContext.mcpReq.inputResponses,
-        "answer",
-        validator,
-      ) as ElicitedAnswer | undefined;
-
-      if (!accepted) {
-        return requestAnswer(question, context, requestedSchema);
-      }
+      await sessionStub(env, sessionId).fetch("https://ask-session/init", {
+        method: "POST",
+      });
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              buildAnswerResult(question, options, accepted),
-              null,
-              2,
-            ),
+            text:
+              "The Ask User widget is mounted for the user. IMPORTANT: do not end the assistant turn. " +
+              "Immediately call ask_user again with question exactly " +
+              WAIT_PREFIX +
+              sessionId +
+              " and wait for the answer.",
           },
         ],
+        structuredContent: {
+          question,
+          options: normalizedOptions,
+          allowMultiple: allow_multiple ?? false,
+          allowOther:
+            normalizedOptions.length === 0 ? true : (allow_other ?? false),
+          placeholder: placeholder ?? "Type your answer…",
+          submitLabel: submit_label ?? "Submit",
+          context:
+            "WAIT_SESSION:" +
+            sessionId +
+            (context ? "\n" + context : ""),
+        },
       };
     },
+  );
+
+  registerAppResource(
+    server,
+    "Ask User Widget",
+    ASK_USER_URI,
+    {
+      mimeType: RESOURCE_MIME_TYPE,
+      description:
+        "Interactive widget for the two-stage blocking Ask User experiment.",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: ASK_USER_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: widgetHtml,
+          _meta: {
+            ui: {
+              csp: {
+                connectDomains: [WIDGET_DOMAIN],
+                resourceDomains: [],
+              },
+              domain: WIDGET_DOMAIN,
+            },
+            "openai/widgetCSP": {
+              connect_domains: [WIDGET_DOMAIN],
+              resource_domains: [],
+            },
+            "openai/widgetDomain": WIDGET_DOMAIN,
+          },
+        },
+      ],
+    }),
   );
 
   return server;
 }
 
-const mcpHandler = createMcpHandler(createServer, {
-  legacy: "reject",
-});
-
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(request.url);
+
+    if (url.pathname.startsWith("/answer/")) {
+      const sessionId = decodeURIComponent(
+        url.pathname.slice("/answer/".length),
+      );
+
+      const corsHeaders = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+      };
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders });
+      }
+
+      if (request.method !== "POST" || !sessionId) {
+        return new Response("Method Not Allowed", {
+          status: 405,
+          headers: corsHeaders,
+        });
+      }
+
+      const forwarded = new Request("https://ask-session/answer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: request.body,
+      });
+
+      const response = await sessionStub(env, sessionId).fetch(forwarded);
+      const headers = new Headers(response.headers);
+      for (const [key, value] of Object.entries(corsHeaders)) {
+        headers.set(key, value);
+      }
+
+      return new Response(response.body, {
+        status: response.status,
+        headers,
+      });
+    }
 
     if (url.pathname === "/health") {
       return Response.json({
         status: "ok",
         name: SERVER_NAME,
         version: SERVER_VERSION,
-        interaction: "mcp-elicitation",
+        experiment: "two-stage-widget-wait",
       });
     }
 
@@ -403,10 +374,11 @@ export default {
         version: SERVER_VERSION,
         mcp: "/mcp",
         health: "/health",
-        interaction: "mcp-elicitation",
+        experiment: "two-stage-widget-wait",
       });
     }
 
+    const mcpHandler = createMcpHandler(() => createServer(env));
     return mcpHandler(request, env, ctx);
   },
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Env>;

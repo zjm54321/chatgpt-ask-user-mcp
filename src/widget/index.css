@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+.ask-card {
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 14px;
+  padding: 14px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.options {
+  display: grid;
+  gap: 8px;
+}
+
+.option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.option.selected {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.option small {
+  display: block;
+  opacity: 0.66;
+  margin-top: 2px;
+}
+
+.indicator {
+  width: 18px;
+  text-align: center;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 72px;
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 10px;
+  padding: 10px;
+  background: transparent;
+  color: inherit;
+  resize: vertical;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.submit {
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 13px;
+  cursor: pointer;
+}
+
+.submit:disabled,
+.option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  margin-top: 8px;
+  font-size: 13px;
+}

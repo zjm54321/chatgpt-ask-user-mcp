@@ -8,5 +8,19 @@
     "logs": {
       "enabled": true
     }
-  }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ASK_SESSIONS",
+        "class_name": "AskSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-ask-session",
+      "new_sqlite_classes": ["AskSession"]
+    }
+  ]
 }

@@ -1,28 +1,38 @@
 {
   "name": "chatgpt-ask-user-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0-two-stage-test",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
-  "description": "A tiny remote MCP server that asks users questions through MCP elicitation without posting a follow-up chat message.",
+  "description": "Two-stage Ask User experiment: mount a widget, then block a second MCP tool call until the widget answers.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "vite build && tsc --noEmit",
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "agents": "^0.23.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260729.1",
+    "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^24.3.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^4.5.2",
+    "tailwindcss": "^4.1.11",
     "typescript": "^5.9.3",
+    "vite": "^7.1.1",
+    "vite-plugin-singlefile": "^2.3.0",
     "wrangler": "^4.115.0"
   }
 }
