@@ -13,6 +13,7 @@ import widgetHtml from "../dist/widget.html";
 const SERVER_NAME = "chatgpt-ask-user-mcp";
 const SERVER_VERSION = "0.5.1-two-stage-test";
 const ASK_USER_URI = "ui://ask-user/two-stage-v1.html";
+const LEGACY_ASK_USER_URI = "ui://ask-user/ask-user.html";
 const WIDGET_DOMAIN = "https://chatgpt-ask-user-mcp.zhangjm.workers.dev";
 const WAIT_PREFIX = "__WAIT__:";
 
@@ -274,6 +275,40 @@ function createServer(env: Env): McpServer {
         },
       };
     },
+  );
+
+  registerAppResource(
+    server,
+    "Ask User Widget (Legacy URI compatibility)",
+    LEGACY_ASK_USER_URI,
+    {
+      mimeType: RESOURCE_MIME_TYPE,
+      description:
+        "Compatibility alias for clients that still cache the previous Ask User widget URI.",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: LEGACY_ASK_USER_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: widgetHtml,
+          _meta: {
+            ui: {
+              csp: {
+                connectDomains: [WIDGET_DOMAIN],
+                resourceDomains: [],
+              },
+              domain: WIDGET_DOMAIN,
+            },
+            "openai/widgetCSP": {
+              connect_domains: [WIDGET_DOMAIN],
+              resource_domains: [],
+            },
+            "openai/widgetDomain": WIDGET_DOMAIN,
+          },
+        },
+      ],
+    }),
   );
 
   registerAppResource(
